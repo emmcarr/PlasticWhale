@@ -1,0 +1,102 @@
+## Calculations for estimating exposure of whales in the Hauraki Gulf to microplastics
+
+## first calculate ratio of scat to prey
+## dry weight scat * ratio dry scat to dry prey * (100/dry weight % - convert back to wet weight)
+## use trucated distributions so dry weight/ratios do not go negative/below 1%/1
+
+ratio.scat.prey<-rtnorm(3000, mu=0.06, sd=0.04, lb = 0.01,ub = Inf)* ## dry weight
+                 rtnorm(3000, mu=4.44, sd=4.38, lb = 1, ub = Inf)*  ## ratio
+                  (100/rnorm(3000, mean = mean.dwprey, sd = sd.dwprey)) ## converting back to wet weight
+
+## Then we calculate the number of lunges ie mouthfuls per 12 hours foraging
+## info from Izadi et al 
+
+
+## lunges per day
+# lunge per session
+## 5.5 ± 6.1 lunges
+
+#Inter-lunge intervals (seconds): 
+#M=107.16  SD=75.36
+
+#Inter-bout intervals (seconds):
+#M=1262.8  SD=1179.8
+
+bw.lunge.count<-function(numba)
+{
+
+  res<-matrix(nrow = numba, ncol=2) ## store results
+         
+  for (rep in 1:numba){ 
+                cum.sec<-0
+                 ## set seconds to zero
+                lunge<-0
+                 ## and lunges to zero
+          
+                  while (cum.sec < 43200) ## ie the number of seconds in 12 hours
+                     {
+                      session.lunge<-rtnorm(1, mu=5.5, sd=6.1, lb = 2, ub = Inf)
+                      session.secs<-((session.lunge*30)+sum(rtnorm(session.lunge-1, mu=107.16, sd=75.36, lb = 1,ub = Inf)))
+                      gap.session<-rtnorm(1, mu=1262.8, sd=1179.8, lb = 1, ub = Inf)
+                      lunge<-lunge+session.lunge
+                      cum.sec<-cum.sec+session.secs+gap.session
+                      print(cum.sec)
+                      }
+                  res[rep,1]<-cum.sec
+                  res[rep,2]<-lunge
+          
+                    }
+              res
+}
+
+
+bw.lunge<-bw.lunge.count(3000)
+est<-bw.lunge[1:1000,]
+mean.mouthfuls.per.day<-mean(est[,2])
+quantile.95mouthful.per.day<-quantile(est[,2], probs = c(0.05, 0.95))
+sd(est[,2])
+
+## function to estimate daily microplastic exposure
+daily.exp<-function(ratio.scat.prey, bw.lunge)
+  {
+    res<-matrix(nrow = length(ratio.scat.prey), ncol=3) ## store results
+  
+      for (rep in 1:length(ratio.scat.prey)) 
+            {
+                if (ratio.scat.prey[rep] > 1) 
+                              { ## select value for grams of prey per mouthful
+                               mp.mouthful<-(runif(1, min = 2250, max = 15000)/(ratio.scat.prey[rep]))*5
+                               ## assumes 60 lunges per day
+                               mp.day<-mp.mouthful*bw.lunge[rep,2]
+                               res[rep,1]<-rep
+                               res[rep,2]<-mp.mouthful
+                               res[rep,3]<-mp.day
+                                }
+                else  {
+                      res[rep,1]<-rep
+                      res[rep,2]<-NA
+                      res[rep,3]<-NA
+                      }
+                }
+        res
+}
+
+
+
+test<-daily.exp(ratio.scat.prey, bw.lunge)
+
+whale.exp<-na.omit(test)
+
+whale.exp<-whale.exp[1:1000,]
+
+mean.mouthful<-mean(whale.exp[,2])
+#20791.75
+quantile.95mouthful<-quantile(whale.exp[,2], probs = c(0.05, 0.95))
+## 4491.131 51087.423 
+mean.day<-mean(whale.exp[,3])
+#2934986
+quantile.95mouthful.per.day.sim<-quantile(whale.exp[,3], probs = c(0.05, 0.95))
+#640339.8 7176478.7
+
+write.csv(whale.exp, "extrapolation.plastic.whale.text")
+
