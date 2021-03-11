@@ -1,0 +1,204 @@
+## DNA metabarcoding pipeline 
+## Code by Richard O'Rorke
+
+~/./obitools #Use obitools
+
+unzip_func() {
+for f in $1
+do
+unzip -j "$f"
+done
+}
+# export function
+export -f unzip_func
+
+## run function in parallel
+# $1 filenames to use in parallel,
+parallel -j 8 --line-buffer unzip_func ::: *.zip
+
+gunzip_func() {
+for f in $1
+do
+gunzip "$f"
+done
+}
+# export function
+export -f gunzip_func
+
+## run function in parallel
+# $1 filenames to use in parallel,
+parallel -j 20 --line-buffer gunzip_func ::: *.gz
+
+mkdir ~/metabarcoding_working/PEARed/
+mkdir ~/metabarcoding_working/PEARed/ASSEMBLED
+
+PEAR_func() {
+for f_file in $1
+do
+r_file="$(echo $1 | sed -e 's/R1/R2/')"
+~/./pear.0.9.11 -m 400 -n 200 -y 16G -f $1 -r $r_file -o PEARed/$1
+done
+}
+# export function
+export -f PEAR_func
+
+## run function in parallel
+# $1 filenames to use in parallel,
+parallel -j 20 --line-buffer PEAR_func ::: *R1*.fastq
+
+cd ~/metabarcoding_working/PEARed/
+mv *fastq.assembled.fastq ASSEMBLED/
+cd ~/metabarcoding_working/PEARed/ASSEMBLED
+
+#get rid of the dashes in file names, as they cause problems downstream
+for x in *"-"*; do
+mv -- "$x" "${x//-/_}"
+done
+
+###### ###### ######
+
+# filter out bad quality bases using Usearch
+TRIM_func() {
+for f in $1 ; do ~/uparse -fastq_filter "$f" -fastaout "${f%.fastq}.filtered.fasta" -fastq_maxee 0.5; done
+}
+# export function
+export -f TRIM_func
+
+## run function in parallel
+# $1 filenames to use in parallel,
+parallel -j 20 --line-buffer TRIM_func ::: *.assembled.fastq
+
+###### ###### ######
+
+# get rid of carraige returns on fasta sequence
+
+two_line_fasta_func() {
+for f in $1
+do
+perl -pe '$. > 1 and /^>/ ? print "\n" : chomp' "$f" > "$f.2ler"
+done
+}
+# export function
+export -f two_line_fasta_func
+
+parallel -j 20 --line-buffer two_line_fasta_func ::: *.assembled.filtered.fasta
+
+ # use grep to assign sequences to PCR replicates, then pipe to sed to remove primer
+
+SEP_fwd_func() {
+for f in $1
+do
+grep -B1 '^TCTCAGCGCTGGCAAGGTGTCA' "$f" | sed 's/^TCTCAGCGCTGGCAAGGTGTCA//g' > "$f.Euphausiacea.Fwd"
+grep -B1 '^CGGTAAAACTCGTGCC' "$f" | sed 's/^CGGTAAAACTCGTGCC//g' > "$f.Actinopterygii.Fwd"
+grep -B1 '^TGTGTGGTGGTAAACGGAG' "$f" | sed 's/^TGTGTGGTGGTAAACGGAG//g' > "$f.Copepoda.Fwd"
+grep -B1 '^CGCTGCGTTCTTCATCG' "$f" | sed 's/^CGCTGCGTTCTTCATCG//g' > "$f.Salpidae.Fwd"
+done
+}
+# export function
+export -f SEP_fwd_func
+
+parallel -j 25 --line-buffer SEP_fwd_func ::: *.assembled.filtered.fasta.2ler
+
+###### ###### ######
+
+SEP_rev_func() {
+for f in $1
+do
+grep -B1 'CTCGTCCCGGATAAAACGTCCCCGAG$' "$f.Euphausiacea.Fwd" | sed 's/CTCGTCCCGGATAAAACGTCCCCGAG$//g' > "$f.Euphausiacea.select"
+grep -B1 'CCCAAAGGACTTGGCGG$' "$f.Actinopterygii.Fwd" | sed 's/CCCAAAGGACTTGGCGG$//g' > "$f.Actinopterygii.select"
+grep -B1 'CGAGTAGGTCGGCGG$' "$f.Copepoda.Fwd" | sed 's/CGAGTAGGTCGGCGG$//g' > "$f.Copepoda.select"
+grep -B1 'A.TCGGAGGA.CTCACTAAACC$' "$f.Salpidae.Fwd" | sed 's/A.TCGGAGGA.CTCACTAAACC$//g' > "$f.Salpidae.select"
+done
+}
+# export function
+export -f SEP_rev_func
+
+parallel -j 25 --line-buffer SEP_rev_func ::: *.assembled.filtered.fasta.2ler
+
+###### ###### ######
+
+#   #Make a 'for' loop to rename each sequence with the sample file name - use obiannotate
+reannotate_func() {
+for f in $1
+do
+obiannotate --seq-rank "$f" | obiannotate -C --set-identifier "$f" > "$f.named"
+done
+}
+# export function
+export -f reannotate_func
+
+parallel -j 25 --line-buffer reannotate_func ::: *.select
+
+###### ###### ######
+
+#   #Join all the files together (pooling)
+cat  *.Copepoda.select.named > Copepoda.cat.fasta
+
+#dereplicate seqs ie, just one of each read
+obiuniq Copepoda.cat.fasta > bbb # Use obitools to dereplicate
+
+# make files look different
+sed 's/.* count/\>UniqMMMMMM;size/g' bbb | awk '{for(x=1;x<=NF;x++)if($x~/MMMMMM/){sub(/MMMMMM/,++i)}}1' > ccc # Make file look good for UPARSE
+awk '/^>/ {print($0)}; /^[^>]/ {print(toupper($0))}' ccc > ccc2 # change case for UPARSE
+
+# Important step for UPARSE. Which starts with the most abundant read as a "seed"
+~/usearch10 -sortbysize ccc2 -fastaout seqs_sorted.fasta
+
+# Make Zotu table
+# Denoise
+~/usearch10 -unoise3 seqs_sorted.fasta -minsize 20 -zotus Copepoda.zotus.fa
+# Change case of concatenated fasta file
+awk '/^>/ {print($0)}; /^[^>]/ {print(toupper($0))}' Copepoda.cat.fasta > Copepoda.fasta
+#There seems to have a bug, therefore replace "Zotu" in text with "Otu" and treat as normal
+sed 's/Zotu/Otu/g' Copepoda.zotus.fa > Copepoda_2.zotus.fasta
+
+~/usearch10 -otutab Copepoda.fasta -otus Copepoda_2.zotus.fasta -otutabout Copepoda.zotutab_raw.txt
+
+# Assign taxonomy using naive Baysian clustering
+mkdir MOTHUR # make directory and put taxonomy database inside
+cp Copepoda_2.zotus.fasta MOTHUR
+cp ~/cop_3.unique.tax MOTHUR
+cp ~/cop_3.unique.fasta MOTHUR
+cd MOTHUR
+
+~/mothur/mothur "#classify.seqs(fasta=Copepoda_2.zotus.fasta, template=cop_3.unique.fasta, taxonomy=cop_3.unique.tax, cutoff=50)"
+mv Copepoda_2.zotus.unique.wang.taxonomy Copepoda_2.zotus.unique.wang.taxonomy.txt
+
+###### ###### ######
+
+cd ../
+
+#   #Join all the files together (pooling)
+cat  *.Euphausiacea.select.named > Euphausiacea.cat.fasta
+
+#dereplicate seqs ie, just one of each read
+obiuniq Euphausiacea.cat.fasta > xxx # Use obitools to dereplicate
+
+# make files look different
+sed 's/.* count/\>UniqMMMMMM;size/g' xxx | awk '{for(x=1;x<=NF;x++)if($x~/MMMMMM/){sub(/MMMMMM/,++i)}}1' > yyy # Make file look good for UPARSE
+awk '/^>/ {print($0)}; /^[^>]/ {print(toupper($0))}' yyy > yyy2 # change case for UPARSE
+
+# Important step for UPARSE. Which starts with the most abundant read as a "seed"
+~/usearch10 -sortbysize yyy2 -fastaout seqs_sorted.fasta
+
+# Make Zotu table
+# Denoise
+~/usearch10 -unoise3 seqs_sorted.fasta -minsize 20 -zotus Euphausiacea.zotus.fa
+
+# Change case of concatenated fasta file
+awk '/^>/ {print($0)}; /^[^>]/ {print(toupper($0))}' Euphausiacea.cat.fasta > Euphausiacea.fasta
+
+# Make Zotu table
+#There seems to have a bug, therefore replace "Zotu" in text with "Otu" and treat as normal
+sed 's/Zotu/Otu/g' Euphausiacea.zotus.fa > Euphausiacea_2.zotus.fasta
+
+~/usearch10 -otutab Euphausiacea.fasta -otus Euphausiacea_2.zotus.fasta -otutabout Euphausiacea.zotutab_raw.txt
+
+# Assign taxonomy using naive Baysian clustering
+cp Euphausiacea_2.zotus.fasta MOTHUR
+cp ~/krill_e5_e6.unique.tax MOTHUR
+cp ~/krill_e5_e6.unique.fasta MOTHUR
+cd MOTHUR
+
+~/mothur/mothur "#classify.seqs(fasta=Euphausiacea_2.zotus.fasta, template=krill_e5_e6.unique.fasta, taxonomy=krill_e5_e6.unique.tax, cutoff=50)"
+mv Euphausiacea_2.zotus.unique.wang.taxonomy Euphausiacea_2.zotus.unique.wang.taxonomy.txt
