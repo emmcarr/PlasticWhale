@@ -1,0 +1,131 @@
+setwd("/Users/emac/Dropbox (Personal)/MP and marine mammals/Whale DNA - MP in BW/Manuscript/Extrapolation/")
+library ("TruncatedNormal")
+
+## Parameters - see sup mat for refs
+## ratio dry to wet weight prey
+## 22.8±1.4 for euphausiids
+euph<-rnorm(50, mean=22.8, sd=1.4)
+## 16.2±2.4 for copepods
+cop <-rnorm(50, mean=16.2, sd =2.4)
+
+mean.dwprey<-mean(c(euph,cop))
+sd.dwprey<-sd(c(euph,cop))
+
+
+## Exposure calculations
+
+## first calculate ratio of scat to prey
+## dry weight scat * ratio dry scat to dry prey * (100/dry weight % - convert back to wet weight)
+## use trucated distributions so dry weight/ratios do not go negative/below 1%/1
+
+ratio.scat.prey<-rtnorm(3000, mu=0.06, sd=0.04, lb = 0.01,ub = Inf)* ## dry weight
+                 rtnorm(3000, mu=4.44, sd=4.38, lb = 1, ub = Inf)*  ## ratio
+                  (100/rnorm(3000, mean = mean.dwprey, sd = sd.dwprey)) ## converting back to wet weight
+
+mean(ratio.scat.prey)
+sd(ratio.scat.prey)
+
+## then calculate the number of lunges per day
+## essentially this calculates the number of lunges a Bryde's whale will do in a 12 hour day (43200 secoonds)
+## it does this by simulating feeding sessions and intersession gaps and calculating the time these take until 
+## the cumulative time exceeds 43200 seconds
+
+## Uses following information from Izadi et al 
+
+## lunge per day
+# lunge per session
+## 5.5 ± 6.1 lunges
+
+#Inter-lunge intervals (seconds): 
+#M=107.16  SD=75.36
+
+#Inter-bout intervals (seconds):
+#M=1262.8  SD=1179.8
+
+bw.lunge.count<-function(numba)
+{
+  
+  res<-matrix(nrow = numba, ncol=2) ## store results
+  
+  for (rep in 1:numba){ 
+    cum.sec<-0
+    ## set seconds to zero
+    lunge<-0
+    ## and lunges
+    
+    ## while the target number of seconds has not been reached, simulate a sesson of lunge feeding and intersession interval
+    while (cum.sec < 43200)
+    {
+      ## simulating a session - ie the number of lunges
+      session.lunge<-rtnorm(1, mu=5.5, sd=6.1, lb = 2, ub = Inf)
+      ## simulating the number of seconds per session by multiplying the number of lunges * 30 and then simulating the interlung interval
+      session.secs<-((session.lunge*30)+sum(rtnorm(session.lunge-1, mu=107.16, sd=75.36, lb = 1,ub = Inf)))
+      ## then simulated the gap in time at the end of the session until the next lunge feeding bout begins
+      gap.session<-rtnorm(1, mu=1262.8, sd=1179.8, lb = 1, ub = Inf)
+      ## estimating cumulative time
+      lunge<-lunge+session.lunge
+      cum.sec<-cum.sec+session.secs+gap.session
+      print(cum.sec)
+    }
+    res[rep,1]<-cum.sec
+    res[rep,2]<-lunge
+    
+  }
+  res
+}
+
+bw.lunge<-bw.lunge.count(3000)
+
+bw.est<-bw.lunge[1:1000,]
+mean.mouthfuls.per.day<-mean(est[,2])  # 142.1661
+quantile.95mouthful.per.day<-quantile(est[,2], probs = c(0.05, 0.95)) #115.6799 166.9045
+sd(est[,2]) # 16.16504
+
+
+## function to estimate daily microplastic exposure
+daily.exp<-function(ratio.scat.prey, bw.lunge)
+  {
+    res<-matrix(nrow = length(ratio.scat.prey), ncol=3) ## store results
+  
+      for (rep in 1:length(ratio.scat.prey)) 
+            {
+                if (ratio.scat.prey[rep] > 1) 
+                              { ## select value for grams of prey per mouthful
+                                              ## this first part samples from distribution of grams of prey per mouthful
+                                              ## then divides it by the ratio of scat to prey to get grams of scat per grams of prey
+                                              ## then it divides by six to be directly comparable with the number of microplastics
+                                              ## measured per six grams of prey in this study (rtnorm distribution)
+                              mp.mouthful<-(((runif(1, min = 2250, max = 15000))/(ratio.scat.prey[rep])/6) 
+                                             *rtnorm(1, mu=32, sd=24, lb = 1,ub = Inf))
+                               ## then pulling value from bw.lunge to calculate microplastics per day
+                               mp.day<-mp.mouthful*bw.lunge[rep,2]
+                               res[rep,1]<-rep
+                               res[rep,2]<-mp.mouthful
+                               res[rep,3]<-mp.day
+                                }
+                else  {
+                      res[rep,1]<-rep
+                      res[rep,2]<-NA
+                      res[rep,3]<-NA
+                      }
+                }
+        res
+}
+
+
+nom.mp<-daily.exp(ratio.scat.prey, bw.lunge)
+
+whale.exp<-na.omit(nom.mp)
+
+whale.exp<-whale.exp[1:1000,]
+
+mean.mouthful<-mean(whale.exp[,2])
+#24028.2
+quantile.95mouthful<-quantile(whale.exp[,2], probs = c(0.05, 0.95))
+## 2118.912 69270.902 
+mean.day<-mean(whale.exp[,3])
+#3,408,002
+quantile.95mouthful.per.day.sim<-quantile(whale.exp[,3], probs = c(0.05, 0.95))
+#295809.9 10031370.0 
+
+write.csv(whale.exp, "Oct21extrapolation.plastic.whale.text")
