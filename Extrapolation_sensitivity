@@ -1,0 +1,269 @@
+## Sensitivity analysis: 
+## 1 - microplastics: increase or decrease mean scat_mp by 50%
+## 50% higher
+daily.exp.scatmp.high<-function(ratio.scat.prey, bw.lunge)
+{
+  res<-matrix(nrow = length(ratio.scat.prey), ncol=3) ## store results
+  
+  for (rep in 1:length(ratio.scat.prey)) 
+  {
+    if (ratio.scat.prey[rep] > 1) 
+    { ## select value for grams of prey per mouthful
+      ## this first part samples from distribution of grams of prey per mouthful
+      ## then divides it by the ratio of scat to prey to get grams of scat per grams of prey
+      ## then it divides by six to be directly comparable with the number of microplastics
+      ## measured per six grams of prey in this study (rtnorm distribution)
+      mp.mouthful<-(((runif(1, min = 2250, max = 15000))/(ratio.scat.prey[rep])/6) 
+                    ## this is scat_mp - this is varied by order of magnitude
+                    *rtnorm(1, mu=48, sd=24, lb = 1,ub = Inf))
+      ## then pulling value from bw.lunge to calculate microplastics per day
+      mp.day<-mp.mouthful*bw.lunge[rep,2]
+      res[rep,1]<-rep
+      res[rep,2]<-mp.mouthful
+      res[rep,3]<-mp.day
+    }
+    else  {
+      res[rep,1]<-rep
+      res[rep,2]<-NA
+      res[rep,3]<-NA
+    }
+  }
+  res
+}
+
+nom.mp.high<-daily.exp.scatmp.high(ratio.scat.prey, bw.lunge)
+
+whale.exp.high<-na.omit(nom.mp.high)
+
+whale.exp.high<-whale.exp.high[1:1000,]
+
+hi.mean.mouthful<-mean(whale.exp.high[,2])
+#34412.97
+hi.quantile.95mouthful<-quantile(whale.exp.high[,2], probs = c(0.05, 0.95))
+## 3916.355 97167.397 
+hi.mean.day<-mean(whale.exp.high[,3])
+##4902934
+hi.quantile.95mouthful.per.day.sim<-quantile(whale.exp.high[,3], probs = c(0.05, 0.95))
+#555862.8 14093714.0 
+
+write.csv(whale.exp, "High_Oct21extrapolation.plastic.whale.text")
+
+# 50% lower
+daily.exp.scatmp.lower<-function(ratio.scat.prey, bw.lunge)
+{
+  res<-matrix(nrow = length(ratio.scat.prey), ncol=3) ## store results
+  
+  for (rep in 1:length(ratio.scat.prey)) 
+  {
+    if (ratio.scat.prey[rep] > 1) 
+    { ## select value for grams of prey per mouthful
+      ## this first part samples from distribution of grams of prey per mouthful
+      ## then divides it by the ratio of scat to prey to get grams of scat per grams of prey
+      ## then it divides by six to be directly comparable with the number of microplastics
+      ## measured per six grams of prey in this study (rtnorm distribution)
+      mp.mouthful<-(((runif(1, min = 2250, max = 15000))/(ratio.scat.prey[rep])/6) 
+                    ## this is scat_mp - this is varied by order of magnitude
+                    *rtnorm(1, mu=16, sd=24, lb = 1,ub = Inf))
+      ## then pulling value from bw.lunge to calculate microplastics per day
+      mp.day<-mp.mouthful*bw.lunge[rep,2]
+      res[rep,1]<-rep
+      res[rep,2]<-mp.mouthful
+      res[rep,3]<-mp.day
+    }
+    else  {
+      res[rep,1]<-rep
+      res[rep,2]<-NA
+      res[rep,3]<-NA
+    }
+  }
+  res
+}
+
+nom.mp.low<-daily.exp.scatmp.lower(ratio.scat.prey, bw.lunge)
+
+whale.exp.low<-na.omit(nom.mp.low)
+
+whale.exp.low<-whale.exp.low[1:1000,]
+
+low.mean.mouthful<-mean(whale.exp.low[,2])
+#17165.22
+low.quantile.95mouthful<-quantile(whale.exp.low[,2], probs = c(0.05, 0.95))
+## 1186.983 52882.113 
+low.mean.day<-mean(whale.exp.low[,3])
+##2450935
+low.quantile.95mouthful.per.day.sim<-quantile(whale.exp.low[,3], probs = c(0.05, 0.95))
+#170519.1 7528059.3 
+
+write.csv(whale.exp, "Low_Oct21extrapolation.plastic.whale.text")
+
+## senstivity analysis 2: varying dry weight % to see how much difference prey type makes
+## calculations just using data for euphasiids
+## for this, there are different statistics used
+## ratio dry to wet weight prey
+## 22.8±1.4 for euphausiids
+## 16.2±2.4 for copepods
+
+ratio.scat.prey.euph<-rtnorm(3000, mu=0.06, sd=0.04, lb = 0.01,ub = Inf)* ## dry weight
+                      rtnorm(3000, mu=4.44, sd=4.38, lb = 1, ub = Inf)*  ## ratio
+                      (100/rnorm(3000, mean = 22.8, sd = 1.4)) ## converting back to wet weight
+
+ratio.scat.prey.cop<-rtnorm(3000, mu=0.06, sd=0.04, lb = 0.01,ub = Inf)* ## dry weight
+                      rtnorm(3000, mu=4.44, sd=4.38, lb = 1, ub = Inf)*  ## ratio
+                      (100/rnorm(3000, mean = 16.2, sd = 2.4)) ## converting back to wet weight
+
+
+## using other functions to calculate mean and 95% CI
+nom.mp.euph<-daily.exp(ratio.scat.prey.euph, bw.lunge)
+
+nom.mp.euph<-na.omit(nom.mp.euph)
+
+nom.mp.euph<-nom.mp.euph[1:1000,]
+
+euph.mean.mouthful<-mean(nom.mp.euph[,2])
+#26339.99
+euph.quantile.95mouthful<-quantile(nom.mp.euph[,2], probs = c(0.05, 0.95))
+## 2637.534 73466.329
+euph.mean.day<-mean(nom.mp.euph[,3])
+##3738619
+euph.quantile.95mouthful.per.day.sim<-quantile(nom.mp.euph[,3], probs = c(0.05, 0.95))
+#350976.3 10478690.6 
+
+write.csv(nom.mp.euph, "Euphausiid_Oct21extrapolation.plastic.whale.text")
+
+## using other functions to calculate mean and 95% CI
+nom.mp.cop<-daily.exp(ratio.scat.prey.cop, bw.lunge)
+
+nom.mp.cop<-na.omit(nom.mp.cop)
+
+nom.mp.cop<-nom.mp.cop[1:1000,]
+
+cop.mean.mouthful<-mean(nom.mp.cop[,2])
+#21177.06
+cop.quantile.95mouthful<-quantile(nom.mp.cop[,2], probs = c(0.05, 0.95))
+## 2165.636 64660.438 
+cop.mean.day<-mean(nom.mp.cop[,3])
+##2995386
+cop.quantile.95mouthful.per.day.sim<-quantile(nom.mp.cop[,3], probs = c(0.05, 0.95))
+#315371.5 9194921.2 
+
+write.csv(nom.mp.cop, "Copepod_Oct21extrapolation.plastic.whale.text")
+
+## sensitivity analysis 3: varying number of foraging hours to upper and lower limit of daylight hours in Auckland
+## lower limit: 10 hours or 36000 seconds
+## upper limit: 16 hours or 57,600 seconds
+
+bw.lunge.count.10h<-function(numba)
+{
+  
+  res<-matrix(nrow = numba, ncol=2) ## store results
+  
+  for (rep in 1:numba){ 
+    cum.sec<-0
+    ## set seconds to zero
+    lunge<-0
+    ## and lunges
+    
+    ## while the target number of seconds has not been reached, simulate a sesson of lunge feeding and intersession interval
+    while (cum.sec < 36000)
+    {
+      ## simulating a session - ie the number of lunges
+      session.lunge<-rtnorm(1, mu=5.5, sd=6.1, lb = 2, ub = Inf)
+      ## simulating the number of seconds per session by multiplying the number of lunges * 30 and then simulating the interlung interval
+      session.secs<-((session.lunge*30)+sum(rtnorm(session.lunge-1, mu=107.16, sd=75.36, lb = 1,ub = Inf)))
+      ## then simulated the gap in time at the end of the session until the next lunge feeding bout begins
+      gap.session<-rtnorm(1, mu=1262.8, sd=1179.8, lb = 1, ub = Inf)
+      ## estimating cumulative time
+      lunge<-lunge+session.lunge
+      cum.sec<-cum.sec+session.secs+gap.session
+      print(cum.sec)
+    }
+    res[rep,1]<-cum.sec
+    res[rep,2]<-lunge
+    
+  }
+  res
+}
+
+bw.lunge.10h<-bw.lunge.count.10h(3000)
+
+# estimate number of lunges/mouthfuls per day
+bw.est.10<-bw.lunge.10h[1:1000,]
+mean.mouthfuls.per.day<-mean(bw.est.10[,2])  # 118.7977
+quantile.95mouthful.per.day<-quantile(bw.est.10[,2], probs = c(0.05, 0.95)) #95.14481 143.77390 
+sd(bw.est.10[,2]) # 14.93791
+
+# estimate mps per mouthful and per day
+nom.mp.10h<-daily.exp(ratio.scat.prey, bw.lunge.10h)
+
+nom.mp.10h<-na.omit(nom.mp.10h)
+
+nom.mp.10h<-nom.mp.10h[1:1000,]
+
+day10h.mean.mouthful<-mean(nom.mp.10h[,2])
+#25245.82
+day10h.quantile.95mouthful<-quantile(nom.mp.10h[,2], probs = c(0.05, 0.95))
+## 2289.941 75244.31
+day10h.mean.day<-mean(nom.mp.10h[,3])
+##2991609
+day10h.quantile.95mouthful.per.day.sim<-quantile(nom.mp.10h[,3], probs = c(0.05, 0.95))
+#260620.7 8860490.0 
+
+write.csv(nom.mp.10h, "day10h_Oct21extrapolation.plastic.whale.text")
+
+
+bw.lunge.count.16h<-function(numba)
+{
+  
+  res<-matrix(nrow = numba, ncol=2) ## store results
+  
+  for (rep in 1:numba){ 
+    cum.sec<-0
+    ## set seconds to zero
+    lunge<-0
+    ## and lunges
+    
+    ## while the target number of seconds has not been reached, simulate a sesson of lunge feeding and intersession interval
+    while (cum.sec < 57600)
+    {
+      ## simulating a session - ie the number of lunges
+      session.lunge<-rtnorm(1, mu=5.5, sd=6.1, lb = 2, ub = Inf)
+      ## simulating the number of seconds per session by multiplying the number of lunges * 30 and then simulating the interlung interval
+      session.secs<-((session.lunge*30)+sum(rtnorm(session.lunge-1, mu=107.16, sd=75.36, lb = 1,ub = Inf)))
+      ## then simulated the gap in time at the end of the session until the next lunge feeding bout begins
+      gap.session<-rtnorm(1, mu=1262.8, sd=1179.8, lb = 1, ub = Inf)
+      ## estimating cumulative time
+      lunge<-lunge+session.lunge
+      cum.sec<-cum.sec+session.secs+gap.session
+      print(cum.sec)
+    }
+    res[rep,1]<-cum.sec
+    res[rep,2]<-lunge
+    
+  }
+  res
+}
+
+bw.lunge.16h<-bw.lunge.count.16h(3000)
+
+## estimate number of mouthfuls or lunges per day for a 16 h day 
+bw.est.16<-bw.lunge.16h[1:1000,]
+mean.mouthfuls.per.day<-mean(bw.est.16[,2])  # 188.2213
+quantile.95mouthful.per.day<-quantile(bw.est.16[,2], probs = c(0.05, 0.95)) #158.9302 217.9917 
+sd(bw.est.16[,2]) #17.9662
+
+# estimate mps per mouthful and per day
+nom.mp.16h<-daily.exp(ratio.scat.prey, bw.lunge.16h)
+
+nom.mp.16h<-na.omit(nom.mp.16h)
+nom.mp.16h<-nom.mp.16h[1:1000,]
+
+day16h.mean.mouthful<-mean(nom.mp.16h[,2])
+#25851.55
+day16h.quantile.95mouthful<-quantile(nom.mp.16h[,2], probs = c(0.05, 0.95))
+## 2771.032 74260.230 
+day16h.mean.day<-mean(nom.mp.16h[,3])
+##4858748
+day16h.quantile.95mouthful.per.day.sim<-quantile(nom.mp.16h[,3], probs = c(0.05, 0.95))
+#529760.9 13687078.0 
+
+write.csv(nom.mp.16h, "day16h_Oct21extrapolation.plastic.whale.text")
